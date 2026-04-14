@@ -17,7 +17,6 @@ class MeinEta extends utils.Adapter {
         this.uriMap = {};
 
         this.on("ready", this.onReady.bind(this));
-        this.on("stateChange", this.onStateChange.bind(this));
 
     }
 
@@ -34,11 +33,11 @@ class MeinEta extends utils.Adapter {
 
             this.client = new EtaClient(this.config.host, this.config.port);
 
+            await this.cleanupWrongObjects();
+
             await this.ensureVarSet();
 
             await this.discoverVariables();
-
-            this.subscribeStates("*");
 
             this.log.info("Discovery abgeschlossen");
 
@@ -64,6 +63,26 @@ class MeinEta extends utils.Adapter {
 
     }
 
+    async cleanupWrongObjects() {
+
+        const objects = await this.getAdapterObjectsAsync();
+
+        for (const id in objects) {
+
+            const obj = objects[id];
+
+            if (obj.type === "state" && !obj.common?.type) {
+
+                this.log.warn(`Lösche falsches Objekt ${id}`);
+
+                await this.delObjectAsync(id);
+
+            }
+
+        }
+
+    }
+
     async ensureVarSet() {
 
         try {
@@ -80,43 +99,35 @@ class MeinEta extends utils.Adapter {
 
     async discoverVariables() {
 
-        try {
+        this.log.info("Lese ETA Menüstruktur");
 
-            this.log.info("Lese ETA Menüstruktur");
+        const data = await this.client.get("/user/menu");
 
-            const data = await this.client.get("/user/menu");
+        const menu = data.eta.menu[0];
 
-            const menu = data.eta.menu[0];
+        const variables = extractVariables(menu);
 
-            const variables = extractVariables(menu);
+        this.log.info(`Gefundene Variablen: ${variables.length}`);
 
-            this.log.info(`Gefundene Variablen: ${variables.length}`);
+        for (const v of variables) {
 
-            for (const v of variables) {
+            const id = buildObjectPath(v.path);
 
-                const id = buildObjectPath(v.path);
+            this.uriMap[v.uri] = id;
 
-                this.uriMap[v.uri] = id;
+            await this.createObjectTree(id, v.name, v.uri);
 
-                await this.createObjectTree(id, v.name, v.uri);
+            const uri = v.uri.replace(/^\//, "");
 
-                const uri = v.uri.replace(/^\//, "");
+            try {
 
-                try {
+                await this.client.put(`/user/vars/${this.config.varset}/${uri}`);
 
-                    await this.client.put(`/user/vars/${this.config.varset}/${uri}`);
+            } catch {
 
-                } catch {
-
-                    this.log.debug(`Var nicht hinzugefügt: ${uri}`);
-
-                }
+                this.log.debug(`Var nicht hinzugefügt: ${uri}`);
 
             }
-
-        } catch (error) {
-
-            this.log.error(`Discovery Fehler: ${error}`);
 
         }
 
@@ -124,66 +135,58 @@ class MeinEta extends utils.Adapter {
 
     async createObjectTree(id, name, uri) {
 
-    const parts = id.split(".");
-    let path = "";
+        const parts = id.split(".");
+        let path = "";
 
-    for (let i = 0; i < parts.length; i++) {
+        for (let i = 0; i < parts.length; i++) {
 
-        path = path ? `${path}.${parts[i]}` : parts[i];
+            path = path ? `${path}.${parts[i]}` : parts[i];
 
-        const exists = await this.getObjectAsync(path);
+            const exists = await this.getObjectAsync(path);
 
-        if (exists) continue;
+            if (exists) continue;
 
-        const isLast = i === parts.length - 1;
+            const isLast = i === parts.length - 1;
 
-        // DEVICE (erste Ebene)
-        if (i === 0) {
+            if (i === 0) {
 
-            await this.setObjectAsync(path, {
-                type: "device",
-                common: {
-                    name: parts[i]
-                },
-                native: {}
-            });
+                await this.setObjectAsync(path, {
+                    type: "device",
+                    common: { name: parts[i] },
+                    native: {}
+                });
 
-            continue;
-        }
-
-        // CHANNEL (Ordner)
-        if (!isLast) {
-
-            await this.setObjectAsync(path, {
-                type: "channel",
-                common: {
-                    name: parts[i]
-                },
-                native: {}
-            });
-
-            continue;
-        }
-
-        // STATE (echter Datenpunkt)
-        await this.setObjectAsync(path, {
-            type: "state",
-            common: {
-                name: name || parts[i],
-                type: "number",
-                role: "value",
-                read: true,
-                write: false,
-                def: 0
-            },
-            native: {
-                uri
+                continue;
             }
-        });
+
+            if (!isLast) {
+
+                await this.setObjectAsync(path, {
+                    type: "channel",
+                    common: { name: parts[i] },
+                    native: {}
+                });
+
+                continue;
+            }
+
+            await this.setObjectAsync(path, {
+                type: "state",
+                common: {
+                    name: name || parts[i],
+                    type: "number",
+                    role: "value",
+                    read: true,
+                    write: false,
+                    def: 0
+                },
+                native: { uri }
+            });
+
+        }
 
     }
 
-}
     async pollVars() {
 
         try {
@@ -259,28 +262,6 @@ class MeinEta extends utils.Adapter {
         } catch (error) {
 
             this.log.error(`Error Polling Fehler: ${error}`);
-
-        }
-
-    }
-
-    async onStateChange(id, state) {
-
-        if (!state || state.ack) return;
-
-        try {
-
-            const obj = await this.getObjectAsync(id);
-
-            if (!obj?.native?.uri) return;
-
-            const raw = Math.round(state.val);
-
-            await this.client.post(`/user/var${obj.native.uri}`, `value=${raw}`);
-
-        } catch (error) {
-
-            this.log.error(`Write Fehler: ${error}`);
 
         }
 
