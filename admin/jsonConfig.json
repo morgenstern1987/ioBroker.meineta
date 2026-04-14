@@ -1,1 +1,19 @@
-
+{
+  "type": "panel",
+  "items": {
+    "host": {
+      "type": "text",
+      "label": "ETA IP Adresse"
+    },
+    "port": {
+      "type": "number",
+      "label": "Port",
+      "default": 8080
+    },
+    "pollInterval": {
+      "type": "number",
+      "label": "Poll Intervall (ms)",
+      "default": 60000
+    }
+  }
+}
