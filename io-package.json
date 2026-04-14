@@ -1,1 +1,28 @@
-
+{
+  "common": {
+    "name": "eta-touch",
+    "version": "0.0.1",
+    "titleLang": {
+      "en": "ETA Touch Heating"
+    },
+    "desc": {
+      "en": "Adapter for ETA Touch heating systems"
+    },
+    "platform": "Javascript/Node.js",
+    "mode": "daemon",
+    "type": "heating",
+    "compact": true,
+    "connectionType": "local",
+    "dataSource": "poll",
+    "adminUI": {
+      "config": "json"
+    }
+  },
+  "native": {
+    "host": "",
+    "port": 8080,
+    "pollInterval": 60000,
+    "varset": "iobroker"
+  },
+  "objects": []
+}
