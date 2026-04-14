@@ -15,8 +15,8 @@ class MeinEta extends utils.Adapter {
         });
 
         this.uriMap = {};
+        this.objectsReady = false;
         this.pollTimer = null;
-        this.stopping = false;
 
         this.on("ready", this.onReady.bind(this));
         this.on("unload", this.onUnload.bind(this));
@@ -28,25 +28,22 @@ class MeinEta extends utils.Adapter {
         try {
 
             if (!this.config.host) {
-
-                this.log.error("Bitte ETA IP konfigurieren");
+                this.log.error("Keine ETA IP konfiguriert");
                 return;
-
             }
 
             this.client = new EtaClient(this.config.host, this.config.port);
-
-            await this.cleanupObjects();
 
             await this.ensureVarSet();
 
             await this.discoverVariables();
 
+            this.objectsReady = true;
+
             this.log.info("Discovery abgeschlossen");
 
             this.pollTimer = setInterval(() => {
                 this.pollVars();
-                this.pollErrors();
             }, this.config.pollInterval);
 
             await this.pollVars();
@@ -63,34 +60,12 @@ class MeinEta extends utils.Adapter {
 
         try {
 
-            this.stopping = true;
-
             if (this.pollTimer) clearInterval(this.pollTimer);
 
             callback();
 
         } catch {
             callback();
-        }
-
-    }
-
-    async cleanupObjects() {
-
-        const objects = await this.getAdapterObjectsAsync();
-
-        for (const id in objects) {
-
-            const obj = objects[id];
-
-            if (obj.type === "state" && !obj.common?.type) {
-
-                this.log.warn(`Entferne falsches Objekt ${id}`);
-
-                await this.delObjectAsync(id);
-
-            }
-
         }
 
     }
@@ -123,11 +98,13 @@ class MeinEta extends utils.Adapter {
 
         for (const v of variables) {
 
+            if (!v.uri) continue;
+
             const id = buildObjectPath(v.path);
 
             this.uriMap[v.uri] = id;
 
-            await this.createObjectTree(id, v.name, v.uri);
+            await this.createState(id, v.name, v.uri);
 
             const uri = v.uri.replace(/^\//, "");
 
@@ -141,64 +118,31 @@ class MeinEta extends utils.Adapter {
 
     }
 
-    async createObjectTree(id, name, uri) {
+    async createState(id, name, uri) {
 
-        const parts = id.split(".");
-        let path = "";
+        const obj = await this.getObjectAsync(id);
 
-        for (let i = 0; i < parts.length; i++) {
+        if (obj) return;
 
-            path = path ? `${path}.${parts[i]}` : parts[i];
-
-            const exists = await this.getObjectAsync(path);
-
-            if (exists) continue;
-
-            const last = i === parts.length - 1;
-
-            if (i === 0) {
-
-                await this.setObjectAsync(path, {
-                    type: "device",
-                    common: { name: parts[i] },
-                    native: {}
-                });
-
-                continue;
-
+        await this.setObjectAsync(id, {
+            type: "state",
+            common: {
+                name: name || id,
+                type: "number",
+                role: "value",
+                read: true,
+                write: false
+            },
+            native: {
+                uri
             }
-
-            if (!last) {
-
-                await this.setObjectAsync(path, {
-                    type: "channel",
-                    common: { name: parts[i] },
-                    native: {}
-                });
-
-                continue;
-
-            }
-
-            await this.setObjectAsync(path, {
-                type: "state",
-                common: {
-                    name: name || parts[i],
-                    type: "number",
-                    role: "value",
-                    read: true,
-                    write: false
-                },
-                native: { uri }
-            });
-
-        }
+        });
 
     }
 
     async pollVars() {
 
-        if (this.stopping) return;
+        if (!this.objectsReady) return;
 
         try {
 
@@ -209,8 +153,6 @@ class MeinEta extends utils.Adapter {
             if (!vars) return;
 
             for (const v of vars) {
-
-                if (this.stopping) return;
 
                 const uri = v.$.uri;
 
@@ -243,47 +185,7 @@ class MeinEta extends utils.Adapter {
 
         } catch (error) {
 
-            if (!this.stopping) {
-
-                this.log.error(`Polling Fehler: ${error}`);
-
-            }
-
-        }
-
-    }
-
-    async pollErrors() {
-
-        if (this.stopping) return;
-
-        try {
-
-            const data = await this.client.get("/user/errors");
-
-            const id = "errors.raw";
-
-            await this.setObjectNotExistsAsync(id, {
-                type: "state",
-                common: {
-                    name: "ETA Errors",
-                    type: "string",
-                    role: "json",
-                    read: true,
-                    write: false
-                },
-                native: {}
-            });
-
-            await this.setStateAsync(id, JSON.stringify(data), true);
-
-        } catch (error) {
-
-            if (!this.stopping) {
-
-                this.log.error(`Error Polling Fehler: ${error}`);
-
-            }
+            this.log.error(`Polling Fehler: ${error}`);
 
         }
 
