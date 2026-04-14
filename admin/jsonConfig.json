@@ -3,7 +3,7 @@
   "items": {
     "host": {
       "type": "text",
-      "label": "ETA Heizungs IP"
+      "label": "ETA IP-Adresse"
     },
     "port": {
       "type": "number",
@@ -12,8 +12,18 @@
     },
     "pollInterval": {
       "type": "number",
-      "label": "Polling (ms)",
+      "label": "Polling Intervall (ms)",
       "default": 60000
+    },
+    "varset": {
+      "type": "text",
+      "label": "ETA Varset",
+      "default": "iobroker"
+    },
+    "variables": {
+      "type": "chips",
+      "label": "Zu ladende Variablen",
+      "multiple": true
     }
   }
 }
