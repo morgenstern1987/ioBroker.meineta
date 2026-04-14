@@ -29,7 +29,7 @@ class MeinEta extends utils.Adapter {
 
             this.client = new EtaClient(this.config.host, this.config.port);
 
-            await this.cleanupInvalidObjects();
+            await this.resetAdapterObjects();
 
             await this.ensureVarSet();
 
@@ -42,8 +42,10 @@ class MeinEta extends utils.Adapter {
                 this.pollVars();
 
                 this.pollTimer = setInterval(() => {
+
                     this.pollVars();
                     this.pollErrors();
+
                 }, this.config.pollInterval);
 
             }, 3000);
@@ -56,17 +58,15 @@ class MeinEta extends utils.Adapter {
 
     }
 
-    async cleanupInvalidObjects() {
+    async resetAdapterObjects() {
 
         const objects = await this.getAdapterObjectsAsync();
 
         for (const id in objects) {
 
-            const obj = objects[id];
+            if (id.startsWith(this.namespace + ".")) {
 
-            if (obj.type === "state" && !obj.common?.type) {
-
-                this.log.warn(`Entferne ungültiges Objekt ${id}`);
+                this.log.debug(`Lösche altes Objekt ${id}`);
 
                 await this.delObjectAsync(id);
 
@@ -110,9 +110,7 @@ class MeinEta extends utils.Adapter {
 
             try {
                 await this.client.put(`/user/vars/${this.config.varset}/${uri}`);
-            } catch {
-                this.log.debug(`Variable konnte nicht registriert werden: ${uri}`);
-            }
+            } catch {}
 
         }
 
@@ -162,8 +160,7 @@ class MeinEta extends utils.Adapter {
                     type: "number",
                     role: "value",
                     read: true,
-                    write: false,
-                    def: 0
+                    write: false
                 },
                 native: { uri }
             });
@@ -180,10 +177,7 @@ class MeinEta extends utils.Adapter {
 
             const vars = data?.eta?.vars?.[0]?.variable;
 
-            if (!vars) {
-                this.log.warn("ETA liefert keine Variablen");
-                return;
-            }
+            if (!vars) return;
 
             for (const v of vars) {
 
@@ -207,7 +201,6 @@ class MeinEta extends utils.Adapter {
                 if (unit && obj.common.unit !== unit) {
 
                     obj.common.unit = unit;
-
                     await this.setObjectAsync(id, obj);
 
                 }
