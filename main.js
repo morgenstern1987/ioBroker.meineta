@@ -124,52 +124,55 @@ class MeinEta extends utils.Adapter {
 
     async createObjectTree(id, name, uri) {
 
-    const parts = id.split(".");
-    let path = "";
+        const parts = id.split(".");
+        let path = "";
 
-    for (let i = 0; i < parts.length; i++) {
+        for (let i = 0; i < parts.length; i++) {
 
-        path = path ? `${path}.${parts[i]}` : parts[i];
+            path = path ? `${path}.${parts[i]}` : parts[i];
 
-        const isLast = i === parts.length - 1;
+            const exists = await this.getObjectAsync(path);
 
-        const obj = await this.getObjectAsync(path);
+            if (exists) continue;
 
-        if (obj) continue;
+            const isLast = i === parts.length - 1;
 
-        if (isLast) {
+            if (i === 0) {
 
-            // Datenpunkt
-            await this.setObjectAsync(path, {
-                type: "state",
-                common: {
-                    name,
-                    type: "number",
-                    role: "value",
-                    read: true,
-                    write: true
-                },
-                native: {
-                    uri
-                }
-            });
+                await this.setObjectAsync(path, {
+                    type: "device",
+                    common: { name: parts[i] },
+                    native: {}
+                });
 
-        } else {
+            } else if (!isLast) {
 
-            // Ordnerstruktur
-            await this.setObjectAsync(path, {
-                type: "channel",
-                common: {
-                    name: parts[i]
-                },
-                native: {}
-            });
+                await this.setObjectAsync(path, {
+                    type: "channel",
+                    common: { name: parts[i] },
+                    native: {}
+                });
+
+            } else {
+
+                await this.setObjectAsync(path, {
+                    type: "state",
+                    common: {
+                        name,
+                        type: "number",
+                        role: "value",
+                        read: true,
+                        write: true
+                    },
+                    native: { uri }
+                });
+
+            }
 
         }
 
     }
 
-}
     async pollVars() {
 
         try {
