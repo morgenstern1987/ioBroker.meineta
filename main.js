@@ -6,7 +6,7 @@ const http  = require('http');
 class EtaTouch extends utils.Adapter {
 
     constructor(options) {
-        super({ ...options, name: 'eta-touch' });
+        super({ ...options, name: 'meineta' });
         this.pollTimer   = null;
         this.menuTree    = null;   // raw parsed menu
         this.groupMap    = {};     // { groupId: { name, vars: [{uri, name}] } }
