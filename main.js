@@ -110,33 +110,62 @@ class MeinETA extends utils.Adapter {
     }
 
     /**
-     * Rekursiv alle Variablen sammeln.
-     * pathParts = Pfad-Segmente der Elternknoten (für eindeutige Objekt-IDs).
-     * Knoten MIT Kindern: werden selbst gesammelt (falls lesbar) UND rekursiv in
-     * einen Unterordner abgestiegen → löst Namenskonflikte wie Fühler 1/2/3/4.
+     * Parst eine Liste von <object>-Tags korrekt unter Berücksichtigung von
+     * Verschachtelung. Der naive Regex-Ansatz versagt bei tief verschachtelten
+     * Strukturen, da </object> immer beim ersten Treffer matcht.
+     *
+     * Stattdessen: Zeichenbasiertes Vorwärtslesen mit Zähler für offene Tags.
      */
     collectVars(chunk, pathParts, result) {
-        const re = /<object([^>]*?)(\/>|>([\s\S]*?)<\/object>)/g;
-        let m;
-        while ((m = re.exec(chunk)) !== null) {
-            const attrs    = this.parseAttributes(m[1]);
-            const inner    = m[3] || '';
-            const hasChild = /<object/.test(inner);
-            const name     = attrs.name || attrs.uri || '';
-            const uri      = attrs.uri  || '';
+        let i = 0;
+        while (i < chunk.length) {
+            // Nächstes öffnendes <object suchen
+            const start = chunk.indexOf('<object', i);
+            if (start === -1) break;
 
-            if (!uri) continue;
+            // Tag-Ende finden (könnte self-closing sein)
+            const tagEnd = chunk.indexOf('>', start);
+            if (tagEnd === -1) break;
 
-            if (!hasChild) {
-                // Blattknoten – direkt speichern mit vollem Pfad
-                const fullPath = [...pathParts, name].join('.');
-                result.push({ uri, name: fullPath });
+            const tagStr     = chunk.slice(start + 7, tagEnd); // alles nach "<object"
+            const selfClose  = chunk[tagEnd - 1] === '/';
+            const attrs      = this.parseAttributes(tagStr);
+            const name       = attrs.name || attrs.uri || '';
+            const uri        = attrs.uri  || '';
+            const fullPath   = [...pathParts, name].join('.');
+
+            if (selfClose) {
+                // <object ... /> – Blattknoten
+                if (uri) result.push({ uri, name: fullPath });
+                i = tagEnd + 1;
             } else {
-                // Zwischenknoten: immer selbst speichern (auch /0-Knoten wie Fühler 1)
-                const fullPath = [...pathParts, name].join('.');
-                result.push({ uri, name: fullPath });
-                // Kinder in Unterordner
-                this.collectVars(inner, [...pathParts, name], result);
+                // <object ...> – finde das zugehörige </object> mit Tiefenzähler
+                let depth = 1;
+                let j = tagEnd + 1;
+                while (j < chunk.length && depth > 0) {
+                    const nextOpen  = chunk.indexOf('<object', j);
+                    const nextClose = chunk.indexOf('</object>', j);
+                    if (nextClose === -1) break;
+                    if (nextOpen !== -1 && nextOpen < nextClose) {
+                        // Prüfe ob es wirklich ein öffnendes Tag ist (nicht self-closing)
+                        const nextTagEnd = chunk.indexOf('>', nextOpen);
+                        if (chunk[nextTagEnd - 1] !== '/') depth++;
+                        j = nextTagEnd + 1;
+                    } else {
+                        depth--;
+                        if (depth === 0) {
+                            // inner = Inhalt zwischen öffnendem und schließendem Tag
+                            const inner = chunk.slice(tagEnd + 1, nextClose);
+                            if (uri) result.push({ uri, name: fullPath });
+                            // Rekursiv in Kinder absteigen
+                            this.collectVars(inner, [...pathParts, name], result);
+                            i = nextClose + 9; // 9 = "</object>".length
+                        } else {
+                            j = nextClose + 9;
+                        }
+                    }
+                }
+                if (depth > 0) break; // Fehlerfall
             }
         }
     }
