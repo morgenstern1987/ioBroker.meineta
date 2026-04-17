@@ -121,6 +121,3 @@ Schreibzugriff ist **nicht implementiert** – der Adapter ist rein lesend.
 
 ---
 
-## Lizenz
-
-MIT © [morgenstern1987](https://github.com/morgenstern1987)
